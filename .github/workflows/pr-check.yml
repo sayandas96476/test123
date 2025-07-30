@@ -1,0 +1,42 @@
+name: PR Approval Check
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  check-and-notify:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up GitHub CLI
+      run: |
+        sudo apt update
+        sudo apt install gh -y
+
+    - name: Get file versions (old and new)
+      run: |
+        mkdir files
+        git fetch origin ${{ github.event.pull_request.base.ref }}
+        git fetch origin ${{ github.event.pull_request.head.ref }}
+        git show origin/${{ github.event.pull_request.base.ref }}:test.txt > files/old.txt || echo "" > files/old.txt
+        git show origin/${{ github.event.pull_request.head.ref }}:test.txt > files/new.txt || echo "" > files/new.txt
+
+    - name: Run test.py to get target user
+      run: |
+        python3 test.py files/old.txt files/new.txt > output.txt
+        TARGET_USER=$(cat output.txt)
+        echo "Target user is $TARGET_USER"
+        echo "TARGET_USER=$TARGET_USER" >> $GITHUB_ENV
+
+    - name: Comment to notify user
+      if: env.TARGET_USER != 'no_user_found'
+      run: |
+        gh pr comment ${{ github.event.pull_request.number }} \
+          --body "Hi @${{ env.TARGET_USER }}, please review and approve this PR."
+
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
